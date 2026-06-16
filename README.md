@@ -13,9 +13,9 @@ following**, **global hotkeys**, and a **top-bar zoom indicator**.
 > source, and can crash on OBS 32. This project fixes all three and adds global
 > hotkeys plus a panel indicator — without leaving Wayland or disabling security.
 
-<!-- Demo: add a short screen recording at docs/images/demo.gif and uncomment:
-![OBS zoom to mouse following the cursor on GNOME Wayland with a top-bar ZOOM indicator](docs/images/demo.gif)
--->
+<p align="center">
+  <img src="docs/images/demo.gif" alt="OBS zoom-to-mouse following the mouse cursor on GNOME Wayland, with a top-bar ZOOM indicator" width="720">
+</p>
 
 ## Table of Contents
 
