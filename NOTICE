@@ -1,0 +1,27 @@
+obs-zoom-to-mouse-wayland
+=========================
+
+This project (the GNOME Shell extension under gnome-extension/, the global-hotkey
+bridge under bin/, the scripts under scripts/, the installer/uninstaller, and the
+patch under patches/) is original work licensed under the GNU GPL-3.0 (see LICENSE).
+
+Upstream dependency (NOT redistributed here)
+--------------------------------------------
+The OBS Lua script is the work of BlankSourceCode:
+
+    obs-zoom-to-mouse
+    https://github.com/BlankSourceCode/obs-zoom-to-mouse
+    "Copyright (c) BlankSourceCode. All rights reserved."
+
+At the time of writing, the upstream repository ships NO license file, so its
+code is "all rights reserved." For that reason this repository does NOT contain
+or redistribute obs-zoom-to-mouse.lua.
+
+Instead, patches/wayland-support.patch contains ONLY the Wayland-related changes
+authored for this project, and install.sh downloads the upstream script
+(pinned to tag v1.0.1, commit 23b27d925b2e95635b63a833f01c620f019c0239) directly
+from BlankSourceCode's repository and applies the patch on your own machine.
+
+All credit for the original zoom-to-mouse functionality belongs to BlankSourceCode.
+If you are the upstream author and would prefer a different arrangement, please
+open an issue.

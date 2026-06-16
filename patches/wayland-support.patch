@@ -1,0 +1,235 @@
+--- a/obs-zoom-to-mouse.lua
++++ b/obs-zoom-to-mouse.lua
+@@ -76,6 +76,25 @@
+ local version = obs.obs_get_version_string()
+ local major = tonumber(version:match("(%d+%.%d+)")) or 0
+ 
++-- OBS 30.1 renamed obs_sceneitem_get_info/set_info to *_info2 (the obs_transform_info
++-- struct gained a crop_to_bounds field). The old names were removed from the scripting
++-- bindings in newer OBS (32.x), so prefer the new ones and fall back for older versions.
++function sceneitem_get_info(item, info)
++    if obs.obs_sceneitem_get_info2 ~= nil then
++        obs.obs_sceneitem_get_info2(item, info)
++    else
++        obs.obs_sceneitem_get_info(item, info)
++    end
++end
++
++function sceneitem_set_info(item, info)
++    if obs.obs_sceneitem_set_info2 ~= nil then
++        obs.obs_sceneitem_set_info2(item, info)
++    else
++        obs.obs_sceneitem_set_info(item, info)
++    end
++end
++
+ -- Define the mouse cursor functions for each platform
+ if ffi.os == "Windows" then
+     ffi.cdef([[
+@@ -88,6 +107,9 @@
+     ]])
+     win_point = ffi.new("POINT[1]")
+ elseif ffi.os == "Linux" then
++    -- X11 pointer API. Works on Xorg sessions. Under Wayland XQueryPointer returns a
++    -- frozen position (XWayland only tracks the cursor over X11 windows), so on Wayland
++    -- we prefer the D-Bus pointer set up below and keep this only as a fallback.
+     ffi.cdef([[
+         typedef unsigned long XID;
+         typedef XID Window;
+@@ -98,9 +120,11 @@
+         int XCloseDisplay(Display*);
+     ]])
+ 
+-    x11_lib = ffi.load("X11.so.6")
+-    x11_display = x11_lib.XOpenDisplay(nil)
+-    if x11_display ~= nil then
++    local ok_x11 = pcall(function()
++        x11_lib = ffi.load("X11.so.6")
++        x11_display = x11_lib.XOpenDisplay(nil)
++    end)
++    if ok_x11 and x11_display ~= nil then
+         x11_root = x11_lib.XDefaultRootWindow(x11_display)
+         x11_mouse = {
+             root_win = ffi.new("Window[1]"),
+@@ -112,6 +136,39 @@
+             mask = ffi.new("unsigned int[1]")
+         }
+     end
++
++    -- Wayland: read the global cursor from the "Zoom Pointer (OBS)" GNOME Shell extension
++    -- (uuid zoompointer@karem) over D-Bus. We call GIO in-process so there is no per-frame
++    -- subprocess spawn. The extension calls global.get_pointer() inside gnome-shell.
++    if os.getenv("WAYLAND_DISPLAY") ~= nil then
++        ffi.cdef([[
++            typedef void GDBusConnection;
++            typedef void GVariant;
++            typedef void GVariantType;
++            typedef void GError;
++            typedef void GCancellable;
++            GDBusConnection *g_bus_get_sync(int bus_type, GCancellable *cancellable, GError **error);
++            GVariant *g_dbus_connection_call_sync(GDBusConnection *connection,
++                const char *bus_name, const char *object_path, const char *interface_name,
++                const char *method_name, GVariant *parameters, const GVariantType *reply_type,
++                int flags, int timeout_msec, GCancellable *cancellable, GError **error);
++            GVariant *g_variant_get_child_value(GVariant *value, size_t index);
++            int g_variant_get_int32(GVariant *value);
++            void g_variant_unref(GVariant *value);
++            void g_error_free(GError *error);
++        ]])
++
++        local ok_dbus = pcall(function()
++            gio_lib = ffi.load("gio-2.0.so.0")
++            glib_lib = ffi.load("glib-2.0.so.0")
++            local err = ffi.new("GError*[1]")
++            gio_conn = gio_lib.g_bus_get_sync(2, nil, err) -- 2 == G_BUS_TYPE_SESSION
++            if gio_conn == nil and err[0] ~= nil then
++                glib_lib.g_error_free(err[0])
++            end
++        end)
++        use_wayland_pointer = ok_dbus and gio_conn ~= nil
++    end
+ elseif ffi.os == "OSX" then
+     ffi.cdef([[
+         typedef struct {
+@@ -155,7 +212,28 @@
+             mouse.y = win_point[0].y
+         end
+     elseif ffi.os == "Linux" then
+-        if x11_lib ~= nil and x11_display ~= nil and x11_root ~= nil and x11_mouse ~= nil then
++        if use_wayland_pointer and gio_conn ~= nil then
++            -- Wayland: ask the GNOME Shell extension for the global cursor position
++            local err = ffi.new("GError*[1]")
++            local res = gio_lib.g_dbus_connection_call_sync(
++                gio_conn,
++                "org.gnome.Shell.Extensions.ZoomPointer",
++                "/org/gnome/Shell/Extensions/ZoomPointer",
++                "org.gnome.Shell.Extensions.ZoomPointer",
++                "GetPointer",
++                nil, nil, 0, 250, nil, err)
++            if res ~= nil then
++                local cx = glib_lib.g_variant_get_child_value(res, 0)
++                local cy = glib_lib.g_variant_get_child_value(res, 1)
++                mouse.x = glib_lib.g_variant_get_int32(cx)
++                mouse.y = glib_lib.g_variant_get_int32(cy)
++                glib_lib.g_variant_unref(cx)
++                glib_lib.g_variant_unref(cy)
++                glib_lib.g_variant_unref(res)
++            elseif err[0] ~= nil then
++                glib_lib.g_error_free(err[0])
++            end
++        elseif x11_lib ~= nil and x11_display ~= nil and x11_root ~= nil and x11_mouse ~= nil then
+             if x11_lib.XQueryPointer(x11_display, x11_root, x11_mouse.root_win, x11_mouse.child_win, x11_mouse.root_x, x11_mouse.root_y, x11_mouse.win_x, x11_mouse.win_y, x11_mouse.mask) ~= 0 then
+                 mouse.x = tonumber(x11_mouse.win_x[0])
+                 mouse.y = tonumber(x11_mouse.win_y[0])
+@@ -189,6 +267,14 @@
+             prop_type = "string"
+         }
+     elseif ffi.os == "Linux" then
++        -- Under Wayland the screen capture is the PipeWire source; under Xorg it is xshm.
++        if os.getenv("WAYLAND_DISPLAY") ~= nil then
++            return {
++                source_id = "pipewire-screen-capture-source",
++                prop_id = "screen",
++                prop_type = "int"
++            }
++        end
+         return {
+             source_id = "xshm_input",
+             prop_id = "screen",
+@@ -409,6 +495,7 @@
+     end
+ 
+     zoom_state = ZoomState.None
++    set_zoom_indicator(false)
+ 
+     if sceneitem ~= nil then
+         if crop_filter ~= nil and source ~= nil then
+@@ -432,7 +519,7 @@
+ 
+         if sceneitem_info_orig ~= nil then
+             log("Transform info reset back to original")
+-            obs.obs_sceneitem_get_info(sceneitem, sceneitem_info_orig)
++            sceneitem_get_info(sceneitem, sceneitem_info_orig)
+             sceneitem_info_orig = nil
+         end
+ 
+@@ -553,13 +640,13 @@
+     if sceneitem ~= nil then
+         -- Capture the original settings so we can restore them later
+         sceneitem_info_orig = obs.obs_transform_info()
+-        obs.obs_sceneitem_get_info(sceneitem, sceneitem_info_orig)
++        sceneitem_get_info(sceneitem, sceneitem_info_orig)
+ 
+         sceneitem_crop_orig = obs.obs_sceneitem_crop()
+         obs.obs_sceneitem_get_crop(sceneitem, sceneitem_crop_orig)
+ 
+         sceneitem_info = obs.obs_transform_info()
+-        obs.obs_sceneitem_get_info(sceneitem, sceneitem_info)
++        sceneitem_get_info(sceneitem, sceneitem_info)
+ 
+         sceneitem_crop = obs.obs_sceneitem_crop()
+         obs.obs_sceneitem_get_crop(sceneitem, sceneitem_crop)
+@@ -608,7 +695,7 @@
+             sceneitem_info.bounds.x = source_width * sceneitem_info.scale.x
+             sceneitem_info.bounds.y = source_height * sceneitem_info.scale.y
+ 
+-            obs.obs_sceneitem_set_info(sceneitem, sceneitem_info)
++            sceneitem_set_info(sceneitem, sceneitem_info)
+ 
+             log("WARNING: Found existing non-boundingbox transform. This may cause issues with zooming.\n" ..
+                 "         Settings have been auto converted to a bounding box scaling transfrom instead.\n" ..
+@@ -786,6 +873,29 @@
+     return { crop = crop, raw_center = mouse, clamped_center = { x = math.floor(crop.x + crop.w * 0.5), y = math.floor(crop.y + crop.h * 0.5) } }
+ end
+ 
++---
++-- Show/hide the GNOME top-bar zoom indicator (via the zoompointer@karem extension).
++-- No-op when not running under the Wayland D-Bus pointer setup.
++---@param active boolean True to show the indicator, false to hide it
++function set_zoom_indicator(active)
++    if not (use_wayland_pointer and gio_conn ~= nil) then
++        return
++    end
++    local err = ffi.new("GError*[1]")
++    local res = gio_lib.g_dbus_connection_call_sync(
++        gio_conn,
++        "org.gnome.Shell.Extensions.ZoomPointer",
++        "/org/gnome/Shell/Extensions/ZoomPointer",
++        "org.gnome.Shell.Extensions.ZoomPointer",
++        active and "ZoomOn" or "ZoomOff",
++        nil, nil, 0, 250, nil, err)
++    if res ~= nil then
++        glib_lib.g_variant_unref(res)
++    elseif err[0] ~= nil then
++        glib_lib.g_error_free(err[0])
++    end
++end
++
+ function on_toggle_follow(pressed)
+     if pressed then
+         is_following_mouse = not is_following_mouse
+@@ -808,6 +918,7 @@
+         if zoom_state == ZoomState.ZoomedIn or zoom_state == ZoomState.None then
+             if zoom_state == ZoomState.ZoomedIn then
+                 log("Zooming out")
++                set_zoom_indicator(false)
+                 -- To zoom out, we set the target back to whatever it was originally
+                 zoom_state = ZoomState.ZoomingOut
+                 zoom_time = 0
+@@ -820,6 +931,7 @@
+                 end
+             else
+                 log("Zooming in")
++                set_zoom_indicator(true)
+                 -- To zoom in, we get a new target based on where the mouse was when zoom was clicked
+                 zoom_state = ZoomState.ZoomingIn
+                 zoom_info.zoom_to = zoom_value
+@@ -1246,7 +1358,7 @@
+         obs.source_list_release(transitions)
+     end
+ 
+-    if ffi.os == "Linux" and not x11_display then
++    if ffi.os == "Linux" and not x11_display and not use_wayland_pointer then
+         log("ERROR: Could not get X11 Display for Linux\n" ..
+             "Mouse position will be incorrect.")
+     end

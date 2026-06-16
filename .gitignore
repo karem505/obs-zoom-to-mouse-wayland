@@ -1,0 +1,11 @@
+# Never commit the upstream script — it is fetched at install time, not redistributed.
+obs-zoom-to-mouse.lua
+*.orig.lua
+*.orig
+*.rej
+
+# OS / editor noise
+.DS_Store
+*.swp
+*~
+__pycache__/

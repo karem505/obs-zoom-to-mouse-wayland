@@ -1,0 +1,8 @@
+{
+    "uuid": "zoompointer@karem",
+    "name": "Zoom Pointer (OBS)",
+    "description": "Exposes the global pointer position over D-Bus so obs-zoom-to-mouse can follow the cursor on Wayland. Calls global.get_pointer() inside GNOME Shell; no 'unsafe mode' needed.",
+    "shell-version": ["45", "46", "47", "48", "49", "50"],
+    "session-modes": ["user"],
+    "version": 1
+}
