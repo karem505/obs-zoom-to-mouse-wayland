@@ -122,9 +122,9 @@ Three small, focused pieces cooperate over D-Bus and OBS's WebSocket:
 
 ```mermaid
 flowchart LR
-    K["Global shortcut\nCtrl+Alt+Z"] -->|runs| B["obs-zoom-toggle.py"]
-    B -->|"WebSocket: TriggerHotkeyByName"| O["OBS + patched\nobs-zoom-to-mouse.lua"]
-    O -->|"D-Bus: GetPointer"| E["GNOME extension\nzoompointer@karem"]
+    K["Global shortcut<br/>Ctrl+Alt+Z"] -->|runs| B["obs-zoom-toggle.py"]
+    B -->|"WebSocket: TriggerHotkeyByName"| O["OBS + patched<br/>obs-zoom-to-mouse.lua"]
+    O -->|"D-Bus: GetPointer"| E["GNOME extension<br/>zoompointer@karem"]
     E -->|"global.get_pointer()"| G["GNOME Shell"]
     O -->|"D-Bus: ZoomOn / ZoomOff"| E
     E -->|show / hide| I["Top-bar ZOOM indicator"]
