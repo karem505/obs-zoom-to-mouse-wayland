@@ -55,6 +55,8 @@ of telling you to fall back to an X11 session.
 - ✅ **PipeWire screen capture** is auto-detected as a valid zoom source.
 - ✅ **Global hotkeys** (`Ctrl+Alt+Z` zoom, `Ctrl+Alt+A` follow) that work from any
   app, bridged through OBS's built-in WebSocket.
+- ✅ **Hold-to-zoom** — hold `Alt+Ctrl+X` to zoom in, release to zoom out
+  (needs `python3-evdev` + input-device access; see Usage below).
 - ✅ **Top-bar "ZOOM" indicator** that appears while you're zoomed in.
 - ✅ **OBS 32 compatibility fix** for the removed `obs_sceneitem_get_info` API.
 - ✅ Works with **Flatpak and native OBS**; one-command install and uninstall.
@@ -68,6 +70,7 @@ of telling you to fall back to an X11 session.
 | GNOME Shell | 45–50 (ESM extensions) |
 | Python | `python3` + `websocket-client` (`sudo apt install python3-websocket`) |
 | Tools | `curl`, `patch`, `gsettings`, `gnome-extensions` (preinstalled on GNOME) |
+| Hold-to-zoom | `python3-evdev` + input-device access (`sudo dnf install python3-evdev` then `sudo usermod -aG input $USER`, or run with `sudo`) |
 
 ## Installation
 
@@ -112,9 +115,32 @@ bash scripts/verify-zoom-pointer.sh
 |----------|--------|
 | `Ctrl + Alt + Z` | Toggle zoom to mouse |
 | `Ctrl + Alt + A` | Toggle cursor following while zoomed |
+| Hold `Alt + Ctrl + X` | Zoom in — release to zoom out (hold-to-zoom daemon) |
 
 While zoomed in, a **🔍 ZOOM** badge shows in the GNOME top bar and disappears when
 you zoom out.
+
+### Hold-to-zoom (Alt+Ctrl+X)
+
+Hold-to-zoom uses a small Python daemon (`obs-zoom-hold.py`) that grabs the keyboard
+globally via `evdev`. Because it needs to read raw input events, it requires
+access to `/dev/input` — either run it as root, or add your user to the `input`
+group and log out/in:
+
+```bash
+sudo usermod -aG input $USER
+# then log out and log back in
+```
+
+The installer installs the daemon and a systemd user service
+(`obs-zoom-hold.service`). If the service can't start, run the daemon manually:
+
+```bash
+sudo python3 ~/.local/bin/obs-zoom-hold.py
+```
+
+Hold-to-zoom and the toggle hotkeys (`Ctrl+Alt+Z` / `Ctrl+Alt+A`) work side by side —
+use whichever you prefer.
 
 ## How it works
 

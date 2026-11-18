@@ -32,6 +32,7 @@ die()  { printf '\033[1;31m[x]\033[0m %s\n' "$*" >&2; exit 1; }
 case "${XDG_CURRENT_DESKTOP:-}" in *GNOME*) : ;; *) warn "Desktop is '${XDG_CURRENT_DESKTOP:-unknown}', not GNOME. The cursor extension and shortcuts are GNOME-specific." ;; esac
 for c in curl patch python3 gsettings gnome-extensions; do command -v "$c" >/dev/null 2>&1 || die "Missing required command: $c"; done
 python3 -c "import websocket" 2>/dev/null || warn "Python 'websocket-client' is missing. Global hotkeys need it: sudo apt install python3-websocket  (or: pip install --user websocket-client)"
+python3 -c "import evdev" 2>/dev/null || warn "Python 'evdev' is missing. Hold-to-zoom (Alt+Ctrl+X) needs it: sudo dnf install python3-evdev  (Ubuntu: sudo apt install python3-evdev, or: pip install --user evdev)"
 
 # ---------------------------------------------------------------- 1. build patched lua
 say "Downloading upstream obs-zoom-to-mouse.lua (v1.0.1) and applying the Wayland patch..."
@@ -110,6 +111,31 @@ Gio.Settings.sync()
 print("   extension enabled; shortcuts bound:", zoom_key, follow_key)
 PY
 
+# ---------------------------------------------------------------- 6. hold-to-zoom daemon
+say "Installing hold-to-zoom daemon ($BIN_DIR/obs-zoom-hold.py)..."
+install -m 0755 "$REPO_DIR/bin/obs-zoom-hold.py" "$BIN_DIR/obs-zoom-hold.py"
+
+SERVICE_DIR="$HOME/.config/systemd/user"
+mkdir -p "$SERVICE_DIR"
+cat > "$SERVICE_DIR/obs-zoom-hold.service" <<EOF
+[Unit]
+Description=Hold-to-zoom daemon for obs-zoom-to-mouse-wayland
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=$BIN_DIR/obs-zoom-hold.py
+Restart=on-failure
+
+[Install]
+WantedBy=graphical-session.target
+EOF
+systemctl --user daemon-reload 2>/dev/null || true
+systemctl --user enable obs-zoom-hold.service 2>/dev/null || true
+systemctl --user start obs-zoom-hold.service 2>/dev/null || \
+  warn "Hold-to-zoom service not started (needs input-device access). " \
+       "Fix: sudo usermod -aG input \$USER  (then log out/in), or run with sudo."
+
 # ---------------------------------------------------------------- done
 cat <<EOF
 
@@ -123,8 +149,9 @@ NEXT STEPS (required):
   4) In the script panel set "Zoom Source" to your screen capture (e.g. "Screen Capture (PipeWire)").
 
 USAGE:
-  $ZOOM_KEY    toggle zoom to mouse        $FOLLOW_KEY    toggle follow
-  A "ZOOM" badge appears in the top bar while zoomed.
+  $ZOOM_KEY             toggle zoom to mouse        $FOLLOW_KEY    toggle follow
+  Alt + Ctrl + X (hold) zoom in / release to zoom out   (hold-to-zoom daemon)
+  A "ZOOM" badge appears in the top bar while zoomed in.
 
 Verify anytime:  bash "$REPO_DIR/scripts/verify-zoom-pointer.sh"
 EOF
