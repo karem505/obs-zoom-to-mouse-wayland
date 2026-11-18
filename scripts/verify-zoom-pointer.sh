@@ -10,7 +10,26 @@ echo "   XDG_SESSION_TYPE=${XDG_SESSION_TYPE:-unknown}  desktop=${XDG_CURRENT_DE
 
 echo
 echo "2) GNOME extension state:"
-gnome-extensions info "$UUID" 2>&1 | grep -E "Name|State" || echo "   NOT FOUND — run install.sh, then log out/in."
+EXT_DIR="$HOME/.local/share/gnome-shell/extensions/$UUID"
+EXT_LIST="$(gnome-extensions list --user 2>/dev/null || true)"
+
+if [[ ! -d "$EXT_DIR" ]]; then
+  echo "   NOT INSTALLED — run bash install.sh."
+elif ! grep -Fxq "$UUID" <<< "$EXT_LIST"; then
+  echo "   FILES INSTALLED, BUT GNOME HAS NOT DISCOVERED THE EXTENSION."
+  echo "   Log out of GNOME and log back in, then run this verifier again."
+else
+  INFO="$(gnome-extensions info "$UUID" 2>&1 || true)"
+  printf '%s\n' "$INFO" | grep -E "Name|State" || true
+
+  if grep -q "State: ENABLED" <<< "$INFO"; then
+    echo "   OK: extension is enabled."
+  elif grep -q "State: DISABLED" <<< "$INFO"; then
+    echo "   DISABLED — run: gnome-extensions enable $UUID"
+  else
+    echo "   Could not determine extension state."
+  fi
+fi
 
 echo
 echo "3) Live pointer over D-Bus (move the mouse between the two reads):"
@@ -19,7 +38,11 @@ echo "   read 1: $A"; sleep 2
 B=$(gdbus call --session --dest "$NAME" --object-path "$OBJ" --method "$NAME.GetPointer" 2>&1)
 echo "   read 2: $B"
 if [[ "$A" == *Error* || -z "$A" ]]; then
-  echo "   FAIL: extension not answering. Log out/in, then: gnome-extensions enable $UUID"
+  if [[ -d "$EXT_DIR" ]] && ! grep -Fxq "$UUID" <<< "$EXT_LIST"; then
+    echo "   FAIL: GNOME has not loaded the installed extension. Log out and back in."
+  else
+    echo "   FAIL: D-Bus service unavailable. Check whether the extension is enabled."
+  fi
 elif [[ "$A" == "$B" ]]; then
   echo "   WARN: same value twice — did the mouse move? If it never changes, the extension isn't reading the cursor."
 else
